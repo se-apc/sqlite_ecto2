@@ -5,16 +5,17 @@ defmodule Sqlite.DbConnection.Protocol do
   use DBConnection
 
   defstruct [db: nil, path: nil, checked_out?: false]
+  @default_timeout Application.get_env(:sqlite_ecto2, :timeout, 5_000)
 
   @type state :: %__MODULE__{db: pid, path: String.t, checked_out?: boolean}
-  @timeout Application.get_env(:sqlite_ecto2, :timeout, 5_000)
   @spec connect(Keyword.t) :: {:ok, state}
   def connect(opts) do
-    {db_path, _opts} = Keyword.pop(opts, :database)
+    {db_path, opts} = Keyword.pop(opts, :database)
+    timeout = Keyword.get(opts, :timeout, @default_timeout)
 
     {:ok, db} = Sqlitex.Server.start_link(db_path)
-    :ok = Sqlitex.Server.exec(db, "PRAGMA foreign_keys = ON", timeout: @timeout)
-    {:ok, [[foreign_keys: 1]]} = Sqlitex.Server.query(db, "PRAGMA foreign_keys", timeout: @timeout)
+    :ok = Sqlitex.Server.exec(db, "PRAGMA foreign_keys = ON", timeout: timeout)
+    {:ok, [[foreign_keys: 1]]} = Sqlitex.Server.query(db, "PRAGMA foreign_keys", timeout: timeout)
 
     {:ok, %__MODULE__{db: db, path: db_path, checked_out?: false}}
   end
@@ -39,11 +40,12 @@ defmodule Sqlite.DbConnection.Protocol do
   @spec handle_prepare(Sqlite.DbConnection.Query.t, Keyword.t, state) ::
     {:ok, Sqlite.DbConnection.Query.t, state} |
     {:error, ArgumentError.t, state}
-  def handle_prepare(%Query{statement: statement, prepared: nil} = query, _opts,
+  def handle_prepare(%Query{statement: statement, prepared: nil} = query, opts,
                      %__MODULE__{checked_out?: true, db: db} = s)
   do
     binary_stmt = :erlang.iolist_to_binary(statement)
-    case Sqlitex.Server.prepare(db, binary_stmt, timeout: @timeout) do
+    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    case Sqlitex.Server.prepare(db, binary_stmt, timeout: timeout) do
       {:ok, prepared_info} ->
         updated_query = %{query | prepared: refined_info(prepared_info)}
         {:ok, updated_query, s}
@@ -170,7 +172,7 @@ defmodule Sqlite.DbConnection.Protocol do
   defp get_changes_count(db, command)
     when command in [:insert, :update, :delete]
   do
-    {:ok, %{rows: [[changes_count]]}} = Sqlitex.Server.query_rows(db, "SELECT changes()", timeout: @timeout)
+    {:ok, %{rows: [[changes_count]]}} = Sqlitex.Server.query_rows(db, "SELECT changes()", timeout: @default_timeout)
     changes_count
   end
   defp get_changes_count(_db, _command), do: 1
@@ -206,7 +208,7 @@ defmodule Sqlite.DbConnection.Protocol do
   defp query_rows(db, stmt, opts) do
     # Add timeout, but use existing value if it was specified
     opts =
-      [timeout: @timeout]
+      [timeout: @default_timeout]
       |> Keyword.merge(opts)
 
     try do
