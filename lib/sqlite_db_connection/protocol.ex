@@ -7,14 +7,14 @@ defmodule Sqlite.DbConnection.Protocol do
   defstruct [db: nil, path: nil, checked_out?: false]
 
   @type state :: %__MODULE__{db: pid, path: String.t, checked_out?: boolean}
-
+  @timeout Application.get_env(:sqlite_ecto2, :timeout, 5_000)
   @spec connect(Keyword.t) :: {:ok, state}
   def connect(opts) do
     {db_path, _opts} = Keyword.pop(opts, :database)
 
     {:ok, db} = Sqlitex.Server.start_link(db_path)
-    :ok = Sqlitex.Server.exec(db, "PRAGMA foreign_keys = ON")
-    {:ok, [[foreign_keys: 1]]} = Sqlitex.Server.query(db, "PRAGMA foreign_keys")
+    :ok = Sqlitex.Server.exec(db, "PRAGMA foreign_keys = ON", timeout: @timeout)
+    {:ok, [[foreign_keys: 1]]} = Sqlitex.Server.query(db, "PRAGMA foreign_keys", timeout: @timeout)
 
     {:ok, %__MODULE__{db: db, path: db_path, checked_out?: false}}
   end
@@ -43,7 +43,7 @@ defmodule Sqlite.DbConnection.Protocol do
                      %__MODULE__{checked_out?: true, db: db} = s)
   do
     binary_stmt = :erlang.iolist_to_binary(statement)
-    case Sqlitex.Server.prepare(db, binary_stmt) do
+    case Sqlitex.Server.prepare(db, binary_stmt, timeout: @timeout) do
       {:ok, prepared_info} ->
         updated_query = %{query | prepared: refined_info(prepared_info)}
         {:ok, updated_query, s}
@@ -170,7 +170,7 @@ defmodule Sqlite.DbConnection.Protocol do
   defp get_changes_count(db, command)
     when command in [:insert, :update, :delete]
   do
-    {:ok, %{rows: [[changes_count]]}} = Sqlitex.Server.query_rows(db, "SELECT changes()")
+    {:ok, %{rows: [[changes_count]]}} = Sqlitex.Server.query_rows(db, "SELECT changes()", timeout: @timeout)
     changes_count
   end
   defp get_changes_count(_db, _command), do: 1
@@ -204,6 +204,11 @@ defmodule Sqlite.DbConnection.Protocol do
   end
 
   defp query_rows(db, stmt, opts) do
+    # Add timeout, but use existing value if it was specified
+    opts =
+      [timeout: @timeout]
+      |> Keyword.merge(opts)
+
     try do
       Sqlitex.Server.query_rows(db, stmt, opts)
     catch
