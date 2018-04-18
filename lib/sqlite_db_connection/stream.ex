@@ -22,6 +22,10 @@ defimpl Enumerable, for: Sqlite.DbConnection.Stream do
     end
   end
 
+  def slice(%Sqlite.DbConnection.Stream{}) do
+    {:error, __MODULE__}
+  end
+
   def member?(_, _) do
     {:error, __MODULE__}
   end
