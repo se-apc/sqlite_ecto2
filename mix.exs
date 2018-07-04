@@ -37,7 +37,7 @@ defmodule Sqlite.Ecto2.Mixfile do
      {:db_connection, "~> 1.1.0"},
      {:decimal, "~> 1.2"},
      {:dogma, "~> 0.1", only: :dev},
-     {:esqlite, github: "connorrigby/esqlite", override: true},
+     {:esqlite, git: "https://github.com/se-apc/esqlite.git", override: true},
      {:ex_doc, "~> 0.16", only: :dev},
      {:ecto, "~> 2.2.2"},
      {:poison, "~> 2.2 or ~> 3.0", optional: true},
